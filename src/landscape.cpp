@@ -1080,7 +1080,7 @@ static uint River_Hash(uint tile, uint dir)
  */
 static void BuildRiver(TileIndex begin, TileIndex end)
 {
-	AyStar finder = {};
+	AyStar finder;
 	finder.CalculateG = River_CalculateG;
 	finder.CalculateH = River_CalculateH;
 	finder.GetNeighbours = River_GetNeighbours;

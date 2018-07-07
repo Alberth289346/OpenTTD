@@ -699,7 +699,7 @@ static void CompaniesGenStatistics()
 		/* Drop the oldest history off the end */
 		std::copy_backward(c->old_economy, c->old_economy + MAX_HISTORY_QUARTERS - 1, c->old_economy + MAX_HISTORY_QUARTERS);
 		c->old_economy[0] = c->cur_economy;
-		c->cur_economy = {};
+		c->cur_economy = CompanyEconomyEntry();
 
 		if (c->num_valid_stat_ent != MAX_HISTORY_QUARTERS) c->num_valid_stat_ent++;
 

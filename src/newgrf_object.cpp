@@ -97,7 +97,7 @@ void ResetObjects()
 {
 	/* Clean the pool. */
 	for (uint16 i = 0; i < NUM_OBJECTS; i++) {
-		_object_specs[i] = {};
+		_object_specs[i] = ObjectSpec();
 	}
 
 	/* And add our originals. */
