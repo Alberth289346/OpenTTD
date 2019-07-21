@@ -36,22 +36,13 @@ IniFile::IniFile(const char * const *list_group_names) : IniLoadFile(list_group_
 }
 
 /**
- * Save the Ini file's data to the disk.
- * @param filename the file to save to.
- * @return true if saving succeeded.
+ * Write the data of the object to the provided file.
+ * @param filename Name of the file to write to.
+ * @return Whether writing was successful.
  */
-bool IniFile::SaveToDisk(const char *filename)
+bool IniFile::WriteFile(const char *filename)
 {
-	/*
-	 * First write the configuration to a (temporary) file and then rename
-	 * that file. This to prevent that when OpenTTD crashes during the save
-	 * you end up with a truncated configuration file.
-	 */
-	char file_new[MAX_PATH];
-
-	strecpy(file_new, filename, lastof(file_new));
-	strecat(file_new, ".new", lastof(file_new));
-	FILE *f = fopen(file_new, "w");
+	FILE *f = fopen(filename, "w");
 	if (f == nullptr) return false;
 
 	for (const IniGroup *group = this->group; group != nullptr; group = group->next) {
@@ -86,6 +77,28 @@ bool IniFile::SaveToDisk(const char *filename)
 #else
 	fclose(f);
 #endif
+
+	return true;
+}
+
+/**
+ * Save the Ini file's data to the disk.
+ * @param filename the file to save to.
+ * @return true if saving succeeded.
+ */
+bool IniFile::SaveToDisk(const char *filename)
+{
+	/*
+	 * First write the configuration to a (temporary) file and then rename
+	 * that file. This to prevent that when OpenTTD crashes during the save
+	 * you end up with a truncated configuration file.
+	 */
+	char file_new[MAX_PATH];
+
+	strecpy(file_new, filename, lastof(file_new));
+	strecat(file_new, ".new", lastof(file_new));
+
+	if (!this->WriteFile(file_new)) return false;
 
 #if defined(_WIN32)
 	/* _tcsncpy = strcpy is TCHAR is char, but isn't when TCHAR is wchar. */
