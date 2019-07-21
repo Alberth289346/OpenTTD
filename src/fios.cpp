@@ -840,3 +840,34 @@ bool FileSystemWriter::Close(bool flush)
 	this->handle = nullptr;
 	return this->success;
 }
+
+TarFileWriter::TarFileWriter(WriteTar &wt) : BaseFileWriter(), write_tar(wt)
+{
+}
+
+TarFileWriter::~TarFileWriter()
+{
+}
+
+bool TarFileWriter::Open(const char *name, const char *mode)
+{
+	assert(HasWriteMode(mode));
+
+	this->write_tar.StartWriteFile(name);
+	this->success = this->write_tar.Success();
+	return this->success;
+}
+
+bool TarFileWriter::Write(const void *address, size_t size)
+{
+	this->write_tar.WriteFileData(address, size);
+	this->success = this->write_tar.Success();
+	return this->success;
+}
+
+bool TarFileWriter::Close(bool flush)
+{
+	this->write_tar.StopWriteFile();
+	this->success = this->write_tar.Success();
+	return this->success;
+}

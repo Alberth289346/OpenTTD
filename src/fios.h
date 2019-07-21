@@ -17,6 +17,7 @@
 #include "newgrf_config.h"
 #include "network/core/tcp_content.h"
 
+class WriteTar;
 
 /** Special values for save-load window for the data parameter of #InvalidateWindowData. */
 enum SaveLoadInvalidateWindowData {
@@ -252,6 +253,20 @@ public:
 
 private:
 	FILE *handle;
+};
+
+/** Writer class for writing data to a file, appending a tarfile. */
+class TarFileWriter : public BaseFileWriter {
+public:
+	TarFileWriter(WriteTar &wt);
+	/* virtual */ ~TarFileWriter();
+
+	/* virtual */ bool Open(const char *name, const char *mode);
+	/* virtual */ bool Write(const void *address, size_t size);
+	/* virtual */ bool Close(bool flush = false);
+
+private:
+	WriteTar &write_tar; ///< Pointer to the destination tarfile, not owned by the class.
 };
 
 enum SortingBits {
