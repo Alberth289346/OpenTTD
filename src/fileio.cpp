@@ -34,6 +34,8 @@
 
 #include "safeguards.h"
 
+assert_compile(sizeof(TarHeader) == 512);
+
 /** Size of the #Fio data buffer. */
 #define FIO_BUFFER_SIZE 512
 
@@ -676,28 +678,6 @@ bool TarScanner::AddFile(const char *filename, size_t basepath_length, const cha
 {
 	/* No tar within tar. */
 	assert(tar_filename == nullptr);
-
-	/* The TAR-header, repeated for every file */
-	struct TarHeader {
-		char name[100];      ///< Name of the file
-		char mode[8];
-		char uid[8];
-		char gid[8];
-		char size[12];       ///< Size of the file, in ASCII
-		char mtime[12];
-		char chksum[8];
-		char typeflag;
-		char linkname[100];
-		char magic[6];
-		char version[2];
-		char uname[32];
-		char gname[32];
-		char devmajor[8];
-		char devminor[8];
-		char prefix[155];    ///< Path of the file
-
-		char unused[12];
-	};
 
 	/* Check if we already seen this file */
 	TarList::iterator it = _tar_list[this->subdir].find(filename);
@@ -1440,4 +1420,179 @@ uint FileScanner::Scan(const char *extension, const char *directory, bool recurs
 	strecpy(path, directory, lastof(path));
 	if (!AppendPathSeparator(path, lastof(path))) return 0;
 	return ScanPath(this, extension, path, strlen(path), recursive);
+}
+
+WriteTar::WriteTar() : dir_name(nullptr), success(false), state(TWS_TAR_CLOSED)
+{
+}
+
+WriteTar::~WriteTar()
+{
+	switch (this->state) {
+		case TWS_FILE_OPENED:
+			this->StopWriteFile();
+			/* FALL-THROUGH */
+
+		case TWS_TAR_OPENED:
+			this->StopWriteTar();
+			/* FALL-THROUGH */
+
+		case TWS_TAR_CLOSED:
+			free(this->dir_name);
+			break;
+
+		default: NOT_REACHED();
+	}
+}
+
+/**
+ * Create a tar file.
+ * @param tar_fname File path of the tar file.
+ * @param dir_name  Name of the directory containing the files.
+ * @return whether the file was successfully opened.
+ * @pre The object should not have another tar file opened.
+ */
+bool WriteTar::StartWriteTar(const char *tar_fname, const char *dir_name)
+{
+	free(this->dir_name);
+	this->dir_name = stredup(dir_name);
+
+	this->fp = fopen(tar_fname, "wb");
+	this->success = (this->fp != nullptr);
+
+	if (this->success) {
+		this->tar_block = 0;
+		this->state = TWS_TAR_OPENED;
+	}
+	return this->success;
+}
+
+/** End writing of the tar file. */
+bool WriteTar::StopWriteTar()
+{
+	this->WriteZeroes(512 * 2); // At the end of the tar, write 2 blocks 0x00 bytes.
+	this->tar_block += 2;
+
+	/* Fill the file until the next multiple of 20 blocks (10KB). */
+	while (this->tar_block % 20 != 0) {
+		this->WriteZeroes(512);
+		this->tar_block++;
+	}
+
+	this->success &= (fclose(this->fp) == 0);
+	this->state = TWS_TAR_CLOSED;
+
+	return this->success;
+}
+
+/**
+ * Write a nul-terminated octal number \a value as text in \a start using exactly \a length bytes.
+ * @param start Start of the array to write.
+ * @param value Value to write.
+ * @param length Length of the array (should be at least 2 bytes).
+ */
+static void MakeOctalValue(char *start, uint32 value, uint length)
+{
+	length--;
+	start[length] = '\0';
+
+	while (length > 0) {
+		length--;
+
+		start[length] = '0' + (value & 7);
+		value /= 8;
+	}
+}
+
+/**
+ * Create a new file in the tar, and set up for writing its data.
+ * @param fname Name of the file.
+ */
+void WriteTar::StartWriteFile(const char *fname)
+{
+	memset(&this->header, 0, sizeof(this->header));
+
+	strecpy(this->header.name, this->dir_name, lastof(this->header.name));
+	AppendPathSeparator(this->header.name, lastof(this->header.name));
+	strecat(this->header.name, fname, lastof(this->header.name));
+
+	MakeOctalValue(this->header.mode, 0664, lengthof(this->header.mode));
+	MakeOctalValue(this->header.uid,  1000, lengthof(this->header.uid));
+	MakeOctalValue(this->header.gid,  1000, lengthof(this->header.gid));
+	MakeOctalValue(this->header.mtime, time(nullptr), lengthof(this->header.mtime));
+	memset(this->header.chksum, ' ', lengthof(this->header.chksum));
+	this->header.typeflag = '0';
+	memcpy(this->header.magic, "ustar ", 6); // '\0' is not written
+	this->header.version[0] = '0';
+	strecpy(this->header.uname, "user", lastof(this->header.uname));
+	strecpy(this->header.gname, "user", lastof(this->header.gname));
+
+	this->WriteZeroes(512); // Write dummy block as place holder of the file header block.
+
+	this->file_size = 0;
+	this->start_block = tar_block;
+	this->state = TWS_FILE_OPENED;
+}
+
+/**
+ * Write file data.
+ * @param data Start of data buffer.
+ * @param length Length of the data.
+ */
+void WriteTar::WriteFileData(const void *data, size_t length)
+{
+	if (length > 0 && fwrite(data, 1, length, this->fp) != length) {
+		DEBUG(misc, 0, "Failed to write tar file-data");
+		this->success = false;
+		return;
+	}
+	this->file_size += length;
+}
+
+/** End writing the file. */
+void WriteTar::StopWriteFile()
+{
+	size_t size = (512 - (this->file_size & 511)) & 511;
+	this->WriteZeroes(size); // Pad the last block.
+
+	/* Write file size in the header. */
+	MakeOctalValue(this->header.size, this->file_size, lengthof(this->header.size));
+	/* Compute and fill checksum. */
+	uint32 sum = 0;
+	uint8 *ptr = (uint8 *)&this->header;
+	for (uint i = 0; i < sizeof(this->header); i++, ptr++) sum += *ptr;
+	MakeOctalValue(this->header.chksum, sum, lengthof(this->header.chksum));
+
+	/* Write the header block, and seek back to the end. */
+	this->success &= (fseek(this->fp, this->tar_block * 512, SEEK_SET) == 0);
+	if (fwrite(&this->header, 1, sizeof(this->header), this->fp) != sizeof(this->header)) {
+		DEBUG(misc, 0, "Writing of tar file-header failed");
+		this->success = false;
+		return;
+	}
+	this->tar_block += 1 + (this->file_size + size) / 512; // header block + data blocks.
+	this->success &= (fseek(this->fp, this->tar_block * 512, SEEK_SET) == 0);
+
+	this->state = TWS_TAR_OPENED;
+}
+
+/**
+ * Write \a size nul bytes in the tar (used for padding, and writing empty blocks).
+ * @param size Number of bytes to write.
+ */
+void WriteTar::WriteZeroes(size_t size)
+{
+	uint8 buffer[512];
+
+	memset(buffer, 0, lengthof(buffer));
+
+	while (size > 0) {
+		size_t length = min(size, 512);
+		if (fwrite(buffer, 1, length, this->fp) != length) {
+			DEBUG(misc, 0, "Writing of tar 0 bytes failed");
+			this->success = false;
+			return;
+		}
+		size -= length;
+	}
 }
