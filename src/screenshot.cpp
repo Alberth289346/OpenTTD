@@ -10,6 +10,7 @@
 /** @file screenshot.cpp The creation of screenshots! */
 
 #include "stdafx.h"
+#include "fios.h"
 #include "fileio_func.h"
 #include "viewport_func.h"
 #include "gfx_func.h"
@@ -50,6 +51,7 @@ typedef void ScreenshotCallback(void *userdata, void *buf, uint y, uint pitch, u
 
 /**
  * Function signature for a screenshot generation routine for one of the available formats.
+ * @param fw          Destination to write to.
  * @param name        Filename, including extension.
  * @param callb       Callback function for generating lines of pixels.
  * @param userdata    User data, passed on to \a callb.
@@ -59,7 +61,7 @@ typedef void ScreenshotCallback(void *userdata, void *buf, uint y, uint pitch, u
  * @param palette     %Colour palette (for 8bpp images).
  * @return File was written successfully.
  */
-typedef bool ScreenshotHandlerProc(const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette);
+typedef bool ScreenshotHandlerProc(BaseFileWriter &fw, const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette);
 
 /** Screenshot format information. */
 struct ScreenshotFormat {
@@ -97,6 +99,7 @@ assert_compile(sizeof(RgbQuad) == 4);
 
 /**
  * Generic .BMP writer
+ * @param fw Destination to write to.
  * @param name file name including extension
  * @param callb callback used for gathering rendered image
  * @param userdata parameters forwarded to \a callb
@@ -107,7 +110,7 @@ assert_compile(sizeof(RgbQuad) == 4);
  * @return was everything ok?
  * @see ScreenshotHandlerProc
  */
-static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
+static bool MakeBMPImage(BaseFileWriter &fw, const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
 {
 	uint bpp; // bytes per pixel
 	switch (pixelformat) {
@@ -118,8 +121,7 @@ static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *user
 		default: return false;
 	}
 
-	FILE *f = fopen(name, "wb");
-	if (f == nullptr) return false;
+	if (!fw.Open(name, "wb")) return false;
 
 	/* Each scanline must be aligned on a 32bit boundary */
 	uint bytewidth = Align(w * bpp, 4); // bytes per line in file
@@ -149,8 +151,10 @@ static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *user
 	bih.clrimp = 0;
 
 	/* Write file header and info header */
-	if (fwrite(&bfh, sizeof(bfh), 1, f) != 1 || fwrite(&bih, sizeof(bih), 1, f) != 1) {
-		fclose(f);
+	fw.Write(&bfh, sizeof(bfh));
+	fw.Write(&bih, sizeof(bih));
+	if (!fw.Success()) {
+		fw.Close();
 		return false;
 	}
 
@@ -164,8 +168,8 @@ static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *user
 			rq[i].reserved = 0;
 		}
 		/* Write the palette */
-		if (fwrite(rq, sizeof(rq), 1, f) != 1) {
-			fclose(f);
+		if (!fw.Write(rq, sizeof(rq))) {
+			fw.Close();
 			return false;
 		}
 	}
@@ -202,18 +206,17 @@ static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *user
 				}
 			}
 			/* Write to file */
-			if (fwrite(line, bytewidth, 1, f) != 1) {
+			if (!fw.Write(line, bytewidth)) {
 				free(buff);
-				fclose(f);
+				fw.Close();
 				return false;
 			}
 		}
 	} while (h != 0);
 
 	free(buff);
-	fclose(f);
-
-	return true;
+	fw.Close();
+	return fw.Success();
 }
 
 /*********************************************************
@@ -230,6 +233,24 @@ static bool MakeBMPImage(const char *name, ScreenshotCallback *callb, void *user
 #include "base_media_base.h"
 #endif /* PNG_TEXT_SUPPORTED */
 
+/**
+ * Callback from libpng to write the generated PNG image data to the writer stream.
+ * @param png_ptr Png data structure.
+ * @param data Pointer to the data to write.
+ * @param length Amount of data to write.
+ */
+static void PngWriterWrite(png_structp png_ptr, png_bytep data, png_size_t length)
+{
+	BaseFileWriter *fw = static_cast<BaseFileWriter *>(png_get_io_ptr(png_ptr));
+	fw->Write(data, length);
+}
+
+/** Callback for flushing the writer. */
+static void PngWriterFlush(png_structp png_ptr)
+{
+	/* Writer manages flushing by itself on close. */
+}
+
 static void PNGAPI png_my_error(png_structp png_ptr, png_const_charp message)
 {
 	DEBUG(misc, 0, "[libpng] error: %s - %s", message, (const char *)png_get_error_ptr(png_ptr));
@@ -243,6 +264,7 @@ static void PNGAPI png_my_warning(png_structp png_ptr, png_const_charp message)
 
 /**
  * Generic .PNG file image writer.
+ * @param fw          Destination to write to.
  * @param name        Filename, including extension.
  * @param callb       Callback function for generating lines of pixels.
  * @param userdata    User data, passed on to \a callb.
@@ -253,10 +275,9 @@ static void PNGAPI png_my_warning(png_structp png_ptr, png_const_charp message)
  * @return File was written successfully.
  * @see ScreenshotHandlerProc
  */
-static bool MakePNGImage(const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
+static bool MakePNGImage(BaseFileWriter &fw, const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
 {
 	png_color rq[256];
-	FILE *f;
 	uint i, y, n;
 	uint maxlines;
 	uint bpp = pixelformat / 8;
@@ -266,30 +287,29 @@ static bool MakePNGImage(const char *name, ScreenshotCallback *callb, void *user
 	/* only implemented for 8bit and 32bit images so far. */
 	if (pixelformat != 8 && pixelformat != 32) return false;
 
-	f = fopen(name, "wb");
-	if (f == nullptr) return false;
+	if (!fw.Open(name, "wb")) return false;
 
 	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, const_cast<char *>(name), png_my_error, png_my_warning);
 
 	if (png_ptr == nullptr) {
-		fclose(f);
+		fw.Close();
 		return false;
 	}
 
 	info_ptr = png_create_info_struct(png_ptr);
 	if (info_ptr == nullptr) {
 		png_destroy_write_struct(&png_ptr, (png_infopp)nullptr);
-		fclose(f);
+		fw.Close();
 		return false;
 	}
 
 	if (setjmp(png_jmpbuf(png_ptr))) {
 		png_destroy_write_struct(&png_ptr, &info_ptr);
-		fclose(f);
+		fw.Close();
 		return false;
 	}
 
-	png_init_io(png_ptr, f);
+	png_set_write_fn(png_ptr, static_cast<void *>(&fw), &PngWriterWrite, &PngWriterFlush);
 
 	png_set_filter(png_ptr, 0, PNG_FILTER_NONE);
 
@@ -389,8 +409,8 @@ static bool MakePNGImage(const char *name, ScreenshotCallback *callb, void *user
 	png_destroy_write_struct(&png_ptr, &info_ptr);
 
 	free(buff);
-	fclose(f);
-	return true;
+	fw.Close();
+	return fw.Success();
 }
 #endif /* WITH_PNG */
 
@@ -421,6 +441,7 @@ assert_compile(sizeof(PcxHeader) == 128);
 
 /**
  * Generic .PCX file image writer.
+ * @param fw          Destination to write to.
  * @param name        Filename, including extension.
  * @param callb       Callback function for generating lines of pixels.
  * @param userdata    User data, passed on to \a callb.
@@ -431,23 +452,17 @@ assert_compile(sizeof(PcxHeader) == 128);
  * @return File was written successfully.
  * @see ScreenshotHandlerProc
  */
-static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
+static bool MakePCXImage(BaseFileWriter &fw, const char *name, ScreenshotCallback *callb, void *userdata, uint w, uint h, int pixelformat, const Colour *palette)
 {
-	FILE *f;
-	uint maxlines;
-	uint y;
-	PcxHeader pcx;
-	bool success;
-
 	if (pixelformat == 32) {
 		DEBUG(misc, 0, "Can't convert a 32bpp screenshot to PCX format. Please pick another format.");
 		return false;
 	}
 	if (pixelformat != 8 || w == 0) return false;
 
-	f = fopen(name, "wb");
-	if (f == nullptr) return false;
+	if(!fw.Open(name, "wb")) return false;
 
+	PcxHeader pcx;
 	memset(&pcx, 0, sizeof(pcx));
 
 	/* setup pcx header */
@@ -466,18 +481,18 @@ static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *user
 	pcx.height = TO_LE16(h);
 
 	/* write pcx header */
-	if (fwrite(&pcx, sizeof(pcx), 1, f) != 1) {
-		fclose(f);
+	if (!fw.Write(&pcx, sizeof(pcx))) {
+		fw.Close();
 		return false;
 	}
 
 	/* use by default 64k temp memory */
-	maxlines = Clamp(65536 / w, 16, 128);
+	uint maxlines = Clamp(65536 / w, 16, 128);
 
 	/* now generate the bitmap bits */
 	uint8 *buff = CallocT<uint8>(w * maxlines); // by default generate 128 lines at a time.
 
-	y = 0;
+	uint y = 0;
 	do {
 		/* determine # lines to write */
 		uint n = min(h - y, maxlines);
@@ -500,15 +515,15 @@ static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *user
 
 				if (ch != runchar || runcount >= 0x3f) {
 					if (runcount > 1 || (runchar & 0xC0) == 0xC0) {
-						if (fputc(0xC0 | runcount, f) == EOF) {
+						if (!fw.PutByte(0xC0 | runcount)) {
 							free(buff);
-							fclose(f);
+							fw.Close();
 							return false;
 						}
 					}
-					if (fputc(runchar, f) == EOF) {
+					if (!fw.PutByte(runchar)) {
 						free(buff);
-						fclose(f);
+						fw.Close();
 						return false;
 					}
 					runcount = 0;
@@ -519,15 +534,15 @@ static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *user
 
 			/* write remaining bytes.. */
 			if (runcount > 1 || (runchar & 0xC0) == 0xC0) {
-				if (fputc(0xC0 | runcount, f) == EOF) {
+				if (!fw.PutByte(0xC0 | runcount)) {
 					free(buff);
-					fclose(f);
+					fw.Close();
 					return false;
 				}
 			}
-			if (fputc(runchar, f) == EOF) {
+			if (!fw.PutByte(runchar)) {
 				free(buff);
-				fclose(f);
+				fw.Close();
 				return false;
 			}
 		}
@@ -536,8 +551,8 @@ static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *user
 	free(buff);
 
 	/* write 8-bit colour palette */
-	if (fputc(12, f) == EOF) {
-		fclose(f);
+	if (!fw.PutByte(12)) {
+		fw.Close();
 		return false;
 	}
 
@@ -549,11 +564,9 @@ static bool MakePCXImage(const char *name, ScreenshotCallback *callb, void *user
 		tmp[i * 3 + 1] = palette[i].g;
 		tmp[i * 3 + 2] = palette[i].b;
 	}
-	success = fwrite(tmp, sizeof(tmp), 1, f) == 1;
-
-	fclose(f);
-
-	return success;
+	fw.Write(tmp, sizeof(tmp));
+	fw.Close();
+	return fw.Success();
 }
 
 /*************************************************
@@ -699,7 +712,8 @@ static const char *MakeScreenshotName(const char *default_fn, const char *ext, b
 static bool MakeSmallScreenshot(bool crashlog)
 {
 	const ScreenshotFormat *sf = _screenshot_formats + _cur_screenshot_format;
-	return sf->proc(MakeScreenshotName(SCREENSHOT_NAME, sf->extension, crashlog), CurrentScreenCallback, nullptr, _screen.width, _screen.height,
+	FileSystemWriter fsw;
+	return sf->proc(fsw, MakeScreenshotName(SCREENSHOT_NAME, sf->extension, crashlog), CurrentScreenCallback, nullptr, _screen.width, _screen.height,
 			BlitterFactory::GetCurrentBlitter()->GetScreenDepth(), _cur_palette.palette);
 }
 
@@ -754,8 +768,9 @@ static bool MakeLargeWorldScreenshot(ScreenshotType t)
 	ViewPort vp;
 	SetupScreenshotViewport(t, &vp);
 
+	FileSystemWriter fsw;
 	const ScreenshotFormat *sf = _screenshot_formats + _cur_screenshot_format;
-	return sf->proc(MakeScreenshotName(SCREENSHOT_NAME, sf->extension), LargeWorldCallback, &vp, vp.width, vp.height,
+	return sf->proc(fsw, MakeScreenshotName(SCREENSHOT_NAME, sf->extension), LargeWorldCallback, &vp, vp.width, vp.height,
 			BlitterFactory::GetCurrentBlitter()->GetScreenDepth(), _cur_palette.palette);
 }
 
@@ -797,8 +812,9 @@ bool MakeHeightmapScreenshot(const char *filename)
 		palette[i].g = i;
 		palette[i].b = i;
 	}
+	FileSystemWriter fsw;
 	const ScreenshotFormat *sf = _screenshot_formats + _cur_screenshot_format;
-	return sf->proc(filename, HeightmapCallback, nullptr, MapSizeX(), MapSizeY(), 8, palette);
+	return sf->proc(fsw, filename, HeightmapCallback, nullptr, MapSizeX(), MapSizeY(), 8, palette);
 }
 
 /**
