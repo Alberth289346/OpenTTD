@@ -12,6 +12,8 @@
 #ifndef SCREENSHOT_H
 #define SCREENSHOT_H
 
+class WriteTar;
+
 void InitializeScreenshotFormats();
 
 const char *GetCurrentScreenshotExtension();
@@ -28,6 +30,7 @@ enum ScreenshotType {
 
 void SetupScreenshotViewport(ScreenshotType t, struct ViewPort *vp);
 bool MakeHeightmapScreenshot(const char *filename);
+const char *WriteHeightmapInTar(WriteTar &tar_stream, const char *name);
 bool MakeScreenshot(ScreenshotType t, const char *name);
 
 extern char _screenshot_format_name[8];

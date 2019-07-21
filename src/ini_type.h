@@ -84,6 +84,15 @@ struct IniLoadFile {
 	 * @param post   Suffix text of the \a buffer part.
 	 */
 	virtual void ReportFileError(const char * const pre, const char * const buffer, const char * const post) = 0;
+
+	/**
+	 * Test whether there is any group in the ini file.
+	 * @return Whether any group exists in the ini file.
+	 */
+	bool IsEmpty()
+	{
+		return this->group == nullptr;
+	}
 };
 
 /** Ini file that supports both loading and saving. */

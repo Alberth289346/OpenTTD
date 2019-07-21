@@ -33,6 +33,8 @@
 
 static const char * const SCREENSHOT_NAME = "screenshot"; ///< Default filename of a saved screenshot.
 static const char * const HEIGHTMAP_NAME  = "heightmap";  ///< Default filename of a saved heightmap.
+static const uint8 OPAQUE = 0xFF;   ///< Value of the opaqueness channel for an opaque palette entry.
+static const uint8 TRANSPARENT = 0; ///< Value of the opaqueness channel for an transparent palette entry.
 
 char _screenshot_format_name[8];      ///< Extension of the current screenshot format (corresponds with #_cur_screenshot_format).
 static uint _cur_screenshot_format;   ///< Index of the currently selected screenshot format in #_screenshot_formats.
@@ -588,17 +590,25 @@ const char *GetCurrentScreenshotExtension()
 	return _screenshot_formats[_cur_screenshot_format].extension;
 }
 
+/**
+ * Get the index of the screenshot format with the provided \a extension.
+ * @param extension Filename extension to find (lower case).
+ * @return Index of the screenshot format with the matching filename extension, or \c -1 if not available.
+ */
+static int GetScreenshotFormatIndexByExtension(const char *extension) {
+	for (uint i = 0; i < lengthof(_screenshot_formats); i++) {
+		if (!strcmp(extension, _screenshot_formats[i].extension)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 /** Initialize screenshot format information on startup, with #_screenshot_format_name filled from the loadsave code. */
 void InitializeScreenshotFormats()
 {
-	uint j = 0;
-	for (uint i = 0; i < lengthof(_screenshot_formats); i++) {
-		if (!strcmp(_screenshot_format_name, _screenshot_formats[i].extension)) {
-			j = i;
-			break;
-		}
-	}
-	_cur_screenshot_format = j;
+	int format = GetScreenshotFormatIndexByExtension(_screenshot_format_name);
+	_cur_screenshot_format = (format >= 0) ? format : 0;
 }
 
 /**
@@ -800,18 +810,78 @@ static void HeightmapCallback(void *userdata, void *buffer, uint y, uint pitch, 
 }
 
 /**
+ * Set a palette entry to the given RGBA colour.
+ * @param col Palette entry to set.
+ * @param r Amount of red (0..255).
+ * @param g Amount of green (0..255).
+ * @param b Amount of blue (0..255).
+ * @param a Amount of opaqueness (0..255).
+ */
+static void SetRGBA(Colour *col, uint r, uint g, uint b, uint a)
+{
+	col->a = a;
+	col->r = r;
+	col->g = g;
+	col->b = b;
+}
+
+/**
+ * Find the available image format considered most useful for saving layers in the scenario tar file.
+ * @return The best available screenshot format.
+ */
+static const ScreenshotFormat *GetPreferredTarfileImageFormat()
+{
+	/* Try to get PNG first,else fallback on PCX. */
+	int sf_index = GetScreenshotFormatIndexByExtension("png");
+	if (sf_index < 0) sf_index = GetScreenshotFormatIndexByExtension("pcx");
+	assert(sf_index >= 0);
+	return &_screenshot_formats[sf_index];
+}
+
+/**
+ * Construct the name of the image file in the tarfile.
+ * @param name Name of the file in the tarfile, without extension.
+ * @param extension Extension to append.
+ * @return The name of the image file in the tarfile. Returned value is statically allocated,
+ *         and is valid until the next call to make an image or image name.
+ * @see _screenshot_name
+ */
+static const char *MakeTarfileImageFilename(const char *name, const char *extension)
+{
+	char *p = strecpy(_screenshot_name, name, lastof(_screenshot_name));
+	p = strecpy(p, ".", lastof(_screenshot_name));
+	strecpy(p, extension, lastof(_screenshot_name));
+	return _screenshot_name;
+}
+
+/**
+ * Write the heightmap with the given \a name (without extension) into the tarfile.
+ * @param tarfile Tarstream to write.
+ * @param name Name of the heightmap file in the tarfile, without extension.
+ * @return Name of the written file if successful, else \c nullptr. Is valid only until the next call to a screenshot routine.
+ */
+const char *WriteHeightmapInTar(WriteTar &tar_stream, const char *name)
+{
+	const ScreenshotFormat *sf = GetPreferredTarfileImageFormat();
+	const char *img_name = MakeTarfileImageFilename(name, sf->extension);
+
+	Colour palette[256];
+	for (uint i = 0; i < lengthof(palette); i++) SetRGBA(&palette[i], i, i, i, OPAQUE);
+
+	TarFileWriter writer(tar_stream);
+	if (!sf->proc(writer, img_name, HeightmapCallback, nullptr, MapSizeX(), MapSizeY(), 8, palette)) return nullptr;
+	return img_name;
+}
+
+/**
  * Make a heightmap of the current map.
  * @param filename Filename to use for saving.
  */
 bool MakeHeightmapScreenshot(const char *filename)
 {
 	Colour palette[256];
-	for (uint i = 0; i < lengthof(palette); i++) {
-		palette[i].a = 0xff;
-		palette[i].r = i;
-		palette[i].g = i;
-		palette[i].b = i;
-	}
+	for (uint i = 0; i < lengthof(palette); i++) SetRGBA(&palette[i], i, i, i, OPAQUE);
+
 	FileSystemWriter fsw;
 	const ScreenshotFormat *sf = _screenshot_formats + _cur_screenshot_format;
 	return sf->proc(fsw, filename, HeightmapCallback, nullptr, MapSizeX(), MapSizeY(), 8, palette);

@@ -409,6 +409,7 @@
     <ClCompile Include="..\src\rev.cpp" />
     <ClCompile Include="..\src\road.cpp" />
     <ClCompile Include="..\src\roadstop.cpp" />
+    <ClCompile Include="..\src\scenario_file.cpp" />
     <ClCompile Include="..\src\screenshot.cpp" />
     <ClCompile Include="..\src\settings.cpp" />
     <ClCompile Include="..\src\signal.cpp" />

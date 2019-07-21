@@ -281,6 +281,7 @@ DECLARE_ENUM_AS_BIT_SET(SortingBits)
 extern SortingBits _savegame_sort_order;
 
 void ShowSaveLoadDialog(AbstractFileType abstract_filetype, SaveLoadOperation fop);
+bool SaveScenarioTarfile(const char *pathname);
 
 void FiosGetSavegameList(SaveLoadOperation fop, FileList &file_list);
 void FiosGetScenarioList(SaveLoadOperation fop, FileList &file_list);

@@ -315,6 +315,9 @@
     <ClCompile Include="..\src\roadstop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\scenario_file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\screenshot.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

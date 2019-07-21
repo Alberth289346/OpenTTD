@@ -70,6 +70,7 @@ rail.cpp
 rev.cpp
 road.cpp
 roadstop.cpp
+scenario_file.cpp
 screenshot.cpp
 settings.cpp
 signal.cpp
