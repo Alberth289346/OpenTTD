@@ -14,6 +14,7 @@
 #include "ini_type.h"
 #include "string_func.h"
 #include "fileio_func.h"
+#include "fios.h"
 
 #if (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L) || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 500)
 # include <unistd.h>
@@ -40,45 +41,39 @@ IniFile::IniFile(const char * const *list_group_names) : IniLoadFile(list_group_
  * @param filename Name of the file to write to.
  * @return Whether writing was successful.
  */
-bool IniFile::WriteFile(const char *filename)
+bool IniFile::WriteFile(BaseFileWriter &fw, const char *filename)
 {
-	FILE *f = fopen(filename, "w");
-	if (f == nullptr) return false;
+	if (!fw.Open(filename, "w")) return false;
 
 	for (const IniGroup *group = this->group; group != nullptr; group = group->next) {
-		if (group->comment) fputs(group->comment, f);
-		fprintf(f, "[%s]\n", group->name);
+		/* Write section header. */
+		if (group->comment) fw.PutString(group->comment);
+		fw.PutByte('[');
+		fw.PutString(group->name);
+		fw.PutByte(']');
+		fw.PutByte('\n');
+
 		for (const IniItem *item = group->item; item != nullptr; item = item->next) {
-			if (item->comment != nullptr) fputs(item->comment, f);
+			if (item->comment != nullptr) fw.PutString(item->comment);
 
 			/* protect item->name with quotes if needed */
-			if (strchr(item->name, ' ') != nullptr ||
-					item->name[0] == '[') {
-				fprintf(f, "\"%s\"", item->name);
+			if (strchr(item->name, ' ') != nullptr || item->name[0] == '[') {
+				fw.PutByte('"');
+				fw.PutString(item->name);
+				fw.PutByte('"');
 			} else {
-				fprintf(f, "%s", item->name);
+				fw.PutString(item->name);
 			}
 
-			fprintf(f, " = %s\n", item->value == nullptr ? "" : item->value);
+			fw.PutString(" = ");
+			if (item->value != nullptr) fw.PutString(item->value);
+			fw.PutByte('\n');
 		}
 	}
-	if (this->comment) fputs(this->comment, f);
+	if (this->comment) fw.PutString(this->comment);
 
-/*
- * POSIX (and friends) do not guarantee that when a file is closed it is
- * flushed to the disk. So we manually flush it do disk if we have the
- * APIs to do so. We only need to flush the data as the metadata itself
- * (modification date etc.) is not important to us; only the real data is.
- */
-#if defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
-	int ret = fdatasync(fileno(f));
-	fclose(f);
-	if (ret != 0) return false;
-#else
-	fclose(f);
-#endif
-
-	return true;
+	fw.Close(true);
+	return fw.Success();
 }
 
 /**
@@ -98,7 +93,8 @@ bool IniFile::SaveToDisk(const char *filename)
 	strecpy(file_new, filename, lastof(file_new));
 	strecat(file_new, ".new", lastof(file_new));
 
-	if (!this->WriteFile(file_new)) return false;
+	FileSystemWriter fsw;
+	if (!this->WriteFile(fsw, file_new)) return false;
 
 #if defined(_WIN32)
 	/* _tcsncpy = strcpy is TCHAR is char, but isn't when TCHAR is wchar. */

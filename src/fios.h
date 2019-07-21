@@ -210,9 +210,10 @@ public:
 
 	virtual bool Open(const char *name, const char *mode) = 0;
 	virtual bool Write(const void *address, size_t size) = 0;
-	virtual bool Close() = 0;
+	virtual bool Close(bool flush = false) = 0;
 
 	bool PutByte(uint8 b);
+	bool PutString(const char *str);
 
 	/**
 	 * Return whether all operations were successful since the last #Open call.
@@ -247,7 +248,7 @@ public:
 
 	/* virtual */ bool Open(const char *name, const char *mode);
 	/* virtual */ bool Write(const void *address, size_t size);
-	/* virtual */ bool Close();
+	/* virtual */ bool Close(bool flush = false);
 
 private:
 	FILE *handle;

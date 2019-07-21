@@ -14,6 +14,8 @@
 
 #include "fileio_type.h"
 
+class BaseFileWriter;
+
 /** Types of groups */
 enum IniGroupType {
 	IGT_VARIABLES = 0, ///< Values of the form "landscape = hilly".
@@ -88,7 +90,7 @@ struct IniLoadFile {
 struct IniFile : IniLoadFile {
 	IniFile(const char * const *list_group_names = nullptr);
 
-	bool WriteFile(const char *filename);
+	bool WriteFile(BaseFileWriter &fw, const char *filename);
 	bool SaveToDisk(const char *filename);
 
 	virtual FILE *OpenFile(const char *filename, Subdirectory subdir, size_t *size);

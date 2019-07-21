@@ -769,8 +769,9 @@ void ScanScenarios()
  */
 
 /**
- * \fn bool BaseFileWriter::Close()
+ * \fn bool BaseFileWriter::Close(bool flush)
  * Close the file.
+ * @param flush If set, try to flush the file to the output just before closing.
  * @return Whether all file operations since opening the file were successful.
  */
 
@@ -784,6 +785,15 @@ bool BaseFileWriter::PutByte(uint8 b)
 	return this->Write(&b, 1);
 }
 
+/**
+ * Write the provided string to the output stream.
+ * @param str String to write
+ * @return Whether writing was successful so far.
+ */
+bool BaseFileWriter::PutString(const char *str)
+{
+	return this->Write(str, strlen(str));
+}
 
 FileSystemWriter::~FileSystemWriter()
 {
@@ -810,9 +820,23 @@ bool FileSystemWriter::Write(const void *address, size_t size)
 	return this->success;
 }
 
-bool FileSystemWriter::Close()
+bool FileSystemWriter::Close(bool flush)
 {
-	if (this->handle != nullptr) this->success &= (fclose(this->handle) == 0);
+	if (this->handle == nullptr) return this->success;
+
+	if (flush) {
+/*
+ * POSIX (and friends) do not guarantee that when a file is closed it is
+ * flushed to the disk. So we manually flush it do disk if we have the
+ * APIs to do so. We only need to flush the data as the metadata itself
+ * (modification date etc.) is not important to us; only the real data is.
+ */
+#if defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
+		this->success &= (fdatasync(fileno(this->handle)) == 0);
+#endif
+	}
+
+	this->success &= (fclose(this->handle) == 0);
 	this->handle = nullptr;
 	return this->success;
 }
