@@ -34,8 +34,7 @@ static const char * const SCREENSHOT_NAME = "screenshot"; ///< Default filename 
 static const char * const HEIGHTMAP_NAME  = "heightmap";  ///< Default filename of a saved heightmap.
 
 char _screenshot_format_name[8];      ///< Extension of the current screenshot format (corresponds with #_cur_screenshot_format).
-uint _num_screenshot_formats;         ///< Number of available screenshot formats.
-uint _cur_screenshot_format;          ///< Index of the currently selected screenshot format in #_screenshot_formats.
+static uint _cur_screenshot_format;   ///< Index of the currently selected screenshot format in #_screenshot_formats.
 static char _screenshot_name[128];    ///< Filename of the screenshot file.
 char _full_screenshot_name[MAX_PATH]; ///< Pathname of the screenshot file.
 
@@ -587,7 +586,6 @@ void InitializeScreenshotFormats()
 		}
 	}
 	_cur_screenshot_format = j;
-	_num_screenshot_formats = lengthof(_screenshot_formats);
 }
 
 /**

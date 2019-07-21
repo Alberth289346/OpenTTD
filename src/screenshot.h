@@ -31,8 +31,6 @@ bool MakeHeightmapScreenshot(const char *filename);
 bool MakeScreenshot(ScreenshotType t, const char *name);
 
 extern char _screenshot_format_name[8];
-extern uint _num_screenshot_formats;
-extern uint _cur_screenshot_format;
 extern char _full_screenshot_name[MAX_PATH];
 
 #endif /* SCREENSHOT_H */
