@@ -300,8 +300,8 @@ const char *_searchpaths[NUM_SEARCHPATHS];
 TarList _tar_list[NUM_SUBDIRS];
 TarFileList _tar_filelist[NUM_SUBDIRS];
 
-typedef std::map<std::string, std::string> TarLinkList;
-static TarLinkList _tar_linklist[NUM_SUBDIRS]; ///< List of directory links
+typedef std::map<std::string, std::string> TarLinkList; ///< Collection of links in tarfiles.
+static TarLinkList _tar_linklist[NUM_SUBDIRS]; ///< Directory links inside tarfiles for each OpenTTD directory.
 
 /**
  * Check whether the given file exists

@@ -19,8 +19,8 @@
 
 /** The define of a TarList. */
 struct TarListEntry {
-	const char *filename;
-	const char *dirname;
+	const char *filename; ///< Path of the tarfile.
+	const char *dirname;  ///< Directory in the tarfile, or \c NULL.
 
 	/* MSVC goes copying around this struct after initialisation, so it tries
 	 * to free filename, which isn't set at that moment... but because it
@@ -29,17 +29,23 @@ struct TarListEntry {
 	~TarListEntry() { free(this->filename); free(this->dirname); }
 };
 
+/** Meta-data of a file in a tarfile. */
 struct TarFileListEntry {
-	const char *tar_filename;
-	size_t size;
-	size_t position;
+	const char *tar_filename; ///< Filename of the tarfile (not owned by this struct).
+	size_t size;              ///< Size of the file.
+	size_t position;          ///< Offset in the tarfile where this file begins.
 };
 
-typedef std::map<std::string, TarListEntry> TarList;
-typedef std::map<std::string, TarFileListEntry> TarFileList;
-extern TarList _tar_list[NUM_SUBDIRS];
-extern TarFileList _tar_filelist[NUM_SUBDIRS];
+typedef std::map<std::string, TarListEntry> TarList; ///< Collection of found tarfiles, ordered by name.
+typedef std::map<std::string, TarFileListEntry> TarFileList; ///< Collection of found files in tarfiles, ordered by name in its tarfile.
+extern TarList _tar_list[NUM_SUBDIRS]; ///< Collection of found tarfiles, for each OpenTTD subdirectory.
+extern TarFileList _tar_filelist[NUM_SUBDIRS]; ///< Collection of found files in tarfiles, for each OpenTTD subdirectory.
 
+/**
+ * Macro to iterate over all files in tarfiles of an OpenTTD subdirectory.
+ * @param tar Iterator variable iterating over #TarFileList.
+ * @param sd OpenTTD subdirectory to search.
+ */
 #define FOR_ALL_TARS(tar, sd) for (tar = _tar_filelist[sd].begin(); tar != _tar_filelist[sd].end(); tar++)
 
 #endif /* TAR_TYPE_H */
