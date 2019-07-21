@@ -202,6 +202,57 @@ public:
 	std::vector<FiosItem> files; ///< The list of files.
 };
 
+/** Interface for writing to a named output stream. */
+class BaseFileWriter {
+public:
+	BaseFileWriter() : success(false) { };
+	virtual ~BaseFileWriter() { };
+
+	virtual bool Open(const char *name, const char *mode) = 0;
+	virtual bool Write(const void *address, size_t size) = 0;
+	virtual bool Close() = 0;
+
+	bool PutByte(uint8 b);
+
+	/**
+	 * Return whether all operations were successful since the last #Open call.
+	 * @return All operations were successful since the last #Open call.
+	 */
+	bool Success()
+	{
+		return this->success;
+	}
+
+	/**
+	 * Look for a 'w' mode character in the open mode of a file.
+	 * @param mode Mode to examine.
+	 * @return Whether a 'w' character was found.
+	 */
+	static bool HasWriteMode(const char *mode)
+	{
+		while (*mode != 'w' && *mode != '\0') mode++;
+		return *mode == 'w';
+	}
+
+protected:
+	bool success; ///< All IO operations were successful since the last #Open call.
+	              ///< Updated by the derived class in overloaded methods.
+};
+
+/** Writer class for writing data to a normal file at the file system. */
+class FileSystemWriter : public BaseFileWriter {
+public:
+	FileSystemWriter() : BaseFileWriter(), handle(nullptr) { };
+	/* virtual */ ~FileSystemWriter();
+
+	/* virtual */ bool Open(const char *name, const char *mode);
+	/* virtual */ bool Write(const void *address, size_t size);
+	/* virtual */ bool Close();
+
+private:
+	FILE *handle;
+};
+
 enum SortingBits {
 	SORT_ASCENDING  = 0,
 	SORT_DESCENDING = 1,

@@ -750,3 +750,69 @@ void ScanScenarios()
 {
 	_scanner.Scan(true);
 }
+
+/**
+ * \fn bool BaseFileWriter::Open(const char *name, const char *mode)
+ * Open a file for writing with the given mode.
+ * @param name Name to use for the file name.
+ * @param mode Mod of writing the file.
+ * @return Whether opening was successful.
+ */
+
+/**
+ * \fn bool BaseFileWriter::Write(const void *address, size_t size)
+ * Write an amount of data to the file.
+ * @param address Start address of the data to write.
+ * @param size Number of bytes to write.
+ * @return Whether all file operations since opening the file were successful.
+ * @note The file must have been opened before.
+ */
+
+/**
+ * \fn bool BaseFileWriter::Close()
+ * Close the file.
+ * @return Whether all file operations since opening the file were successful.
+ */
+
+/**
+ * Write a byte to the output.
+ * @param b Value to write.
+ * @return Whether writing was successful so far.
+ */
+bool BaseFileWriter::PutByte(uint8 b)
+{
+	return this->Write(&b, 1);
+}
+
+
+FileSystemWriter::~FileSystemWriter()
+{
+	this->Close();
+}
+
+bool FileSystemWriter::Open(const char *name, const char *mode)
+{
+	assert(this->handle == nullptr);
+	assert(BaseFileWriter::HasWriteMode(mode));
+
+	this->handle = fopen(name, mode);
+	this->success = (this->handle != nullptr);
+	return this->success;
+}
+
+bool FileSystemWriter::Write(const void *address, size_t size)
+{
+	assert(this->handle != nullptr);
+
+	if (size > 0 && this->success) {
+		this->success &= (fwrite(address, size, 1, this->handle) == 1);
+	}
+	return this->success;
+}
+
+bool FileSystemWriter::Close()
+{
+	if (this->handle != nullptr) this->success &= (fclose(this->handle) == 0);
+	this->handle = nullptr;
+	return this->success;
+}
